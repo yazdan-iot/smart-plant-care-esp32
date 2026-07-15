@@ -10,7 +10,7 @@ volatile int soilPercent = -1;    // latest moisture reading as a percentage, sh
 
 SemaphoreHandle_t serialMutex;    // prevents multiple tasks from printing to Serial at the same time
 
-const unsigned long READ_INTERVAL_MS = 2000; // how often to read the sensor (ms); 1800000 = 30 min for production
+const unsigned long READ_INTERVAL_MS = 1800000; // how often to read the sensor (ms); 1800000 = 30 min for production
 
 int rawToPercent(int raw) {
   int percent = map(raw, RAW_DRY, RAW_WET, 0, 100);
