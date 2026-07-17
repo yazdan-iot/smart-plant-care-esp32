@@ -21,6 +21,9 @@ const int SOIL_SAMPLE_COUNT  = 10;  // how many samples to take when reading the
 const int DHT_PIN = 18; // GPIO that reads the DHT22 sensor
 SimpleDHT22 dht22(DHT_PIN); // Create an instance of the DHT22 sensor
 
+// ---------------- Relay control variables -----------------
+const int RELAY_PIN = 15; // GPIO that controls the relay for watering
+
 // --------------- Soil moisture functions -----------------
 int rawToPercent(int raw) {
   int percent = map(raw, RAW_DRY, RAW_WET, 0, 100);
@@ -66,6 +69,30 @@ void environmentTask(void *parameter) {
   }
 }
 
+void relayControlTask(void *parameter) {
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW); // Ensure relay is off initially
+  int num = 0;
+
+  for (;;) {
+    // Example logic
+    if (num % 2 == 0) {
+      digitalWrite(RELAY_PIN, HIGH); // Turn on relay
+      xSemaphoreTake(serialMutex, portMAX_DELAY);
+      Serial.println("Relay ON");
+      xSemaphoreGive(serialMutex);
+    } else {
+      digitalWrite(RELAY_PIN, LOW); // Turn off relay
+      xSemaphoreTake(serialMutex, portMAX_DELAY);
+      Serial.println("Relay OFF");
+      xSemaphoreGive(serialMutex);
+    }
+    num += 1;
+
+    vTaskDelay(pdMS_TO_TICKS(3000));
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -73,6 +100,7 @@ void setup() {
 
   serialMutex = xSemaphoreCreateMutex();
   xTaskCreatePinnedToCore(environmentTask, "EnvironmentTask", 4096, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(relayControlTask, "RelayControlTask", 4096, NULL, 1, NULL, 1);
 }
 
 void loop() {
