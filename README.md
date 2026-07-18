@@ -1,6 +1,6 @@
 # 🌱 Smart Plant Care System
 
-An ESP32-S3-based smart plant care system that continuously monitors soil moisture, air temperature, and humidity, and will eventually automate irrigation based on real sensor data — not a fixed timer.
+An ESP32-S3-based smart plant care system that continuously monitors soil moisture, air temperature, and humidity, and automatically makes irrigation decisions based on real sensor data. The current implementation uses test parameters for validating the watering logic before final real-world calibration.
 
 Built with PlatformIO (Arduino framework) and FreeRTOS, with an emphasis on power-conscious sensor design and safe hardware practices.
 
@@ -11,11 +11,13 @@ Built with PlatformIO (Arduino framework) and FreeRTOS, with an emphasis on powe
 * ✅ Soil moisture sensing (resistive) with power-gating to extend sensor lifespan
 * ✅ Air temperature and humidity monitoring (DHT22)
 * ✅ Unified FreeRTOS sensor task with mutex-protected Serial logging
+* ✅ Automatic watering decision logic with configurable moisture threshold
+* ✅ Cooldown protection to prevent repeated watering
+* ✅ Configurable watering duration and decision interval
 * ✅ Relay control (control side tested independently)
 
 **Planned**
 
-* ⏳ Automated watering logic with overwatering protection
 * ⏳ Persistent configuration and state via NVS
 * ⏳ Pump + external power circuit integration
 * ⏳ Web dashboard for real-time monitoring and device control
@@ -49,9 +51,9 @@ The resistive soil sensor is powered through a GPIO pin (not tied directly to 3.
 
 The project runs on FreeRTOS (via the Arduino core):
 
-* **`environmentTask`** — a single task that handles both the soil moisture and DHT22 readings in one unified cycle, printing a combined status line
-* **`relayControlTask`** — currently a standalone test task for validating relay control independent of sensor logic
-* **`serialMutex`** — a shared mutex ensuring Serial output from different tasks never interleaves
+* **`environmentTask`** — handles soil moisture and DHT22 measurements in a unified sensing cycle.
+* **`relayControlTask`** — evaluates watering conditions, enforces cooldown protection, and controls the relay for automatic irrigation.
+* **`serialMutex`** — ensures thread-safe Serial logging across FreeRTOS tasks.
 
 ## Getting Started
 
@@ -68,8 +70,8 @@ pio device monitor
 * [x] Phase 2 — DHT22 integration
 * [x] Phase 3 — Unified sensor task
 * [x] Phase 4 — Relay control test *(hardware issue under investigation, see below)*
-* [ ] Phase 5 — Watering decision logic
-* [ ] Phase 6 — Persistent state via NVS
+* [x] Phase 5 — Automatic watering decision logic *(implemented with test parameters)*
+* [ ] Phase 6 — Persistent configuration and state via NVS
 * [ ] Phase 7 — Pump and power circuit integration
 * [ ] Phase 8 — Web dashboard for monitoring and control
 * [ ] Phase 9 — Final calibration and assembly
