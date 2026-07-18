@@ -15,7 +15,7 @@ Built with PlatformIO (Arduino framework) and FreeRTOS, with an emphasis on powe
 * ✅ Cooldown protection to prevent repeated watering
 * ✅ Configurable watering duration and decision interval
 * ✅ Relay control (control side tested independently)
-* ✅ Persistent configuration and state via NVS
+* ✅ Persistent moisture threshold via NVS (survives reboot)
 
 **Planned**
 
@@ -28,7 +28,7 @@ See [Project Roadmap](#project-roadmap) below for the full phase breakdown.
 ## Hardware
 
 | Component                                    | Purpose                                                |
-| -------------------------------------------- | ------------------------------------------------------ |
+| --------------------------------------------- | ------------------------------------------------------ |
 | ESP32-S3-WROOM-1                             | Main controller                                        |
 | Resistive soil moisture sensor (LM393-based) | Soil moisture reading                                  |
 | DHT22                                        | Air temperature and humidity                           |
@@ -47,6 +47,10 @@ A real photo of the current physical build is available in [`docs/photos/`](docs
 
 The resistive soil sensor is powered through a GPIO pin (not tied directly to 3.3V) and is only switched on for the brief moment of each reading. Continuous power across the probes accelerates electrochemical corrosion in moist soil, so gating the power — combined with a long read interval in production — significantly extends the sensor's usable life.
 
+### Why the watering cooldown resets on every reboot
+
+The moisture threshold is persisted in NVS and survives reboots. The last-watering timestamp is intentionally **not** persisted yet: it's based on `millis()`, which resets to zero on every boot, so storing and comparing it across reboots could produce an invalid (underflowed) duration and trigger an unsafe, immediate watering cycle. Until real time (NTP) is available in Phase 8, the system takes the conservative approach of treating every boot as "just watered," requiring a full cooldown period to pass before the first watering cycle after a restart.
+
 ## Software Architecture
 
 The project runs on FreeRTOS (via the Arduino core):
@@ -54,6 +58,7 @@ The project runs on FreeRTOS (via the Arduino core):
 * **`environmentTask`** — handles soil moisture and DHT22 measurements in a unified sensing cycle.
 * **`relayControlTask`** — evaluates watering conditions, enforces cooldown protection, and controls the relay for automatic irrigation.
 * **`serialMutex`** — ensures thread-safe Serial logging across FreeRTOS tasks.
+* **NVS (`Preferences`)** — persists the configurable moisture threshold across reboots.
 
 ## Getting Started
 
@@ -71,7 +76,7 @@ pio device monitor
 * [x] Phase 3 — Unified sensor task
 * [x] Phase 4 — Relay control test *(hardware issue under investigation, see below)*
 * [x] Phase 5 — Automatic watering decision logic *(implemented with test parameters)*
-* [x] Phase 6 — Persistent configuration and state via NVS
+* [x] Phase 6 — Persistent moisture threshold via NVS
 * [ ] Phase 7 — Pump and power circuit integration
 * [ ] Phase 8 — Web dashboard for monitoring and control
 * [ ] Phase 9 — Final calibration and assembly
