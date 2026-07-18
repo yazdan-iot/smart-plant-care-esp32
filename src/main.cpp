@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <SimpleDHT.h>
+#include <Preferences.h>
 
 // ---------------- FreeRTOS variables -----------------
 SemaphoreHandle_t serialMutex;    // prevents multiple tasks from printing to Serial at the same time
@@ -27,12 +28,40 @@ const int RELAY_PIN = 15;
 #define RELAY_ON  LOW   // change to HIGH once new relay's active state is confirmed
 #define RELAY_OFF HIGH
 
-const int MOISTURE_THRESHOLD = 99;                // TEST VALUE — change to 30 for production
+// const int MOISTURE_THRESHOLD = 99;                // TEST VALUE — change to 30 for production
+int moistureThreshold = 30;   // in-memory copy, loaded from NVS at boot (fallback default: 30)
 const unsigned long COOLDOWN_PERIOD_MS = 10000;    // TEST VALUE — change to real cooldown later (e.g. hours)
 const unsigned long WATERING_DURATION_MS = 4000;   // how long the pump stays on
 const unsigned long DECISION_INTERVAL_MS = 5000;   // TEST VALUE — how often we check the decision
 
 volatile unsigned long lastWateringTime = 0;
+
+Preferences preferences;
+
+const char* NVS_NAMESPACE = "plantcare";
+const char* NVS_KEY_THRESHOLD = "threshold";
+
+void loadSettingsFromNVS() {
+  preferences.begin(NVS_NAMESPACE, false);
+  moistureThreshold = preferences.getInt(NVS_KEY_THRESHOLD, 30); // 30 = default if key not found
+  preferences.end();
+
+  xSemaphoreTake(serialMutex, portMAX_DELAY);
+  Serial.printf("Loaded moisture threshold from NVS: %d%%\n", moistureThreshold);
+  xSemaphoreGive(serialMutex);
+}
+
+void saveThresholdToNVS(int newThreshold) {
+  moistureThreshold = newThreshold;
+
+  preferences.begin(NVS_NAMESPACE, false);
+  preferences.putInt(NVS_KEY_THRESHOLD, moistureThreshold);
+  preferences.end();
+
+  xSemaphoreTake(serialMutex, portMAX_DELAY);
+  Serial.printf("Saved new moisture threshold to NVS: %d%%\n", moistureThreshold);
+  xSemaphoreGive(serialMutex);
+}
 
 // --------------- Soil moisture functions -----------------
 int rawToPercent(int raw) {
@@ -84,7 +113,7 @@ void relayControlTask(void *parameter) {
   digitalWrite(RELAY_PIN, RELAY_OFF);
 
   for (;;) {
-    bool soilIsDry = soilPercent < MOISTURE_THRESHOLD;
+    bool soilIsDry = soilPercent < moistureThreshold;  // was: MOISTURE_THRESHOLD
     bool cooldownPassed = (millis() - lastWateringTime) > COOLDOWN_PERIOD_MS;
 
     if (soilIsDry && cooldownPassed) {
@@ -116,6 +145,9 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("Starting soil moisture sensor test (FreeRTOS)...");
+
+  loadSettingsFromNVS();
+  lastWateringTime = millis(); // conservative default until real time (NTP) is available in Phase 8
 
   serialMutex = xSemaphoreCreateMutex();
   xTaskCreatePinnedToCore(environmentTask, "EnvironmentTask", 4096, NULL, 1, NULL, 1);
