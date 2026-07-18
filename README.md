@@ -15,10 +15,10 @@ Built with PlatformIO (Arduino framework) and FreeRTOS, with an emphasis on powe
 * ✅ Cooldown protection to prevent repeated watering
 * ✅ Configurable watering duration and decision interval
 * ✅ Relay control (control side tested independently)
+* ✅ Persistent configuration and state via NVS
 
 **Planned**
 
-* ⏳ Persistent configuration and state via NVS
 * ⏳ Pump + external power circuit integration
 * ⏳ Web dashboard for real-time monitoring and device control
 * ⏳ Final physical assembly and real-world calibration
@@ -71,7 +71,7 @@ pio device monitor
 * [x] Phase 3 — Unified sensor task
 * [x] Phase 4 — Relay control test *(hardware issue under investigation, see below)*
 * [x] Phase 5 — Automatic watering decision logic *(implemented with test parameters)*
-* [ ] Phase 6 — Persistent configuration and state via NVS
+* [x] Phase 6 — Persistent configuration and state via NVS
 * [ ] Phase 7 — Pump and power circuit integration
 * [ ] Phase 8 — Web dashboard for monitoring and control
 * [ ] Phase 9 — Final calibration and assembly
