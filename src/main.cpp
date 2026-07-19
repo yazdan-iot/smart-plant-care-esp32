@@ -285,12 +285,19 @@ void setup() {
   delay(1000);
   Serial.println("Starting soil moisture sensor test (FreeRTOS)...");
 
+  serialMutex = xSemaphoreCreateMutex();
   loadSettingsFromNVS();
   lastWateringTime = millis(); // conservative default until real time (NTP) is available in Phase 8
 
-  serialMutex = xSemaphoreCreateMutex();
+  if (!LittleFS.begin(true)) {
+    Serial.println("LittleFS mount failed");
+  }
+
+  connectWiFi();
+
   xTaskCreatePinnedToCore(environmentTask, "EnvironmentTask", 4096, NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(relayControlTask, "RelayControlTask", 4096, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(webServerTask, "WebServerTask", 4096, NULL, 1, NULL, 1);
 }
 
 void loop() {
