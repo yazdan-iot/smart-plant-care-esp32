@@ -2,6 +2,11 @@
 #include <SimpleDHT.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <WebServer.h>
+#include <LittleFS.h>
+#include <ArduinoJson.h>
+
+WebServer server(80);
 
 // ---------------- FreeRTOS variables -----------------
 SemaphoreHandle_t serialMutex;    // prevents multiple tasks from printing to Serial at the same time
@@ -56,6 +61,10 @@ const char* NVS_KEY_THRESHOLD = "threshold";
 const char* WIFI_SSID = "SSID";
 const char* WIFI_PASSWORD = "PASSWORD";
 
+
+// ==========================================================================================
+
+// ---------------- NVS functions ----------------
 void loadSettingsFromNVS() {
   preferences.begin(NVS_NAMESPACE, false);
   moistureThreshold = preferences.getInt(NVS_KEY_THRESHOLD, 30); // 30 = default if key not found
@@ -165,6 +174,7 @@ void relayControlTask(void *parameter) {
   }
 }
 
+// ---------------- WiFi connection function ----------------
 void connectWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
@@ -183,6 +193,64 @@ void connectWiFi() {
   Serial.println(WiFi.localIP());
   xSemaphoreGive(serialMutex);
 };
+
+// ---------------- WebServer routes handlers ----------------
+void handleStatus() {
+  JsonDocument doc;
+
+  doc["soilPercent"] = soilPercent;
+  doc["temperature"] = lastTemperature;
+  doc["humidity"] = lastHumidity;
+  doc["relayOn"] = (digitalRead(RELAY_PIN) == RELAY_ON);
+  doc["wateringActive"] = wateringActive;
+
+  unsigned long elapsed = millis() - lastWateringTime;
+  doc["cooldownRemainingMs"] = (elapsed < cooldownPeriodMs) ? (cooldownPeriodMs - elapsed) : 0;
+  doc["lastWateredMsAgo"] = elapsed;
+
+  doc["moistureThreshold"] = moistureThreshold;
+  doc["cooldownPeriodMs"] = cooldownPeriodMs;
+  doc["wateringDurationMs"] = wateringDurationMs;
+  doc["decisionIntervalMs"] = decisionIntervalMs;
+  doc["uptimeMs"] = millis();
+
+  String output;
+  serializeJson(doc, output);
+  server.send(200, "application/json", output);
+}
+
+void handleSettings() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"missing body\"}");
+    return;
+  }
+
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain"))) {
+    server.send(400, "application/json", "{\"error\":\"invalid json\"}");
+    return;
+  }
+
+  if (doc["moistureThreshold"].is<int>()) {
+    saveThresholdToNVS(doc["moistureThreshold"].as<int>());
+  }
+  if (doc["cooldownPeriodMs"].is<unsigned long>()) {
+    cooldownPeriodMs = doc["cooldownPeriodMs"].as<unsigned long>();
+  }
+  if (doc["wateringDurationMs"].is<unsigned long>()) {
+    wateringDurationMs = doc["wateringDurationMs"].as<unsigned long>();
+  }
+  if (doc["decisionIntervalMs"].is<unsigned long>()) {
+    decisionIntervalMs = doc["decisionIntervalMs"].as<unsigned long>();
+  }
+
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleWaterNow() {
+  manualWaterRequest = true;
+  server.send(200, "application/json", "{\"ok\":true}");
+}
 
 void setup() {
   Serial.begin(115200);
