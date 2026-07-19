@@ -174,6 +174,24 @@ void relayControlTask(void *parameter) {
   }
 }
 
+// ---------------- WebServer task ----------------
+void webServerTask(void *parameter) {
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/api/status", HTTP_GET, handleStatus);
+  server.on("/api/settings", HTTP_POST, handleSettings);
+  server.on("/api/water", HTTP_POST, handleWaterNow);
+  server.begin();
+
+  xSemaphoreTake(serialMutex, portMAX_DELAY);
+  Serial.println("Web server started");
+  xSemaphoreGive(serialMutex);
+
+  for (;;) {
+    server.handleClient();
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+}
+
 // ---------------- WiFi connection function ----------------
 void connectWiFi() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -195,6 +213,16 @@ void connectWiFi() {
 };
 
 // ---------------- WebServer routes handlers ----------------
+void handleRoot() {
+  File file = LittleFS.open("/dashboard.html", "r");
+  if (!file) {
+    server.send(500, "text/plain", "Dashboard file not found");
+    return;
+  }
+  server.streamFile(file, "text/html");
+  file.close();
+}
+
 void handleStatus() {
   JsonDocument doc;
 
