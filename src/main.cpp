@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <SimpleDHT.h>
 #include <Preferences.h>
+#include <WiFi.h>
 
 // ---------------- FreeRTOS variables -----------------
 SemaphoreHandle_t serialMutex;    // prevents multiple tasks from printing to Serial at the same time
@@ -40,6 +41,10 @@ Preferences preferences;
 
 const char* NVS_NAMESPACE = "plantcare";
 const char* NVS_KEY_THRESHOLD = "threshold";
+
+// ---------------- WiFi variables ----------------
+const char* WIFI_SSID = "SSID";
+const char* WIFI_PASSWORD = "PASSWORD";
 
 void loadSettingsFromNVS() {
   preferences.begin(NVS_NAMESPACE, false);
@@ -140,6 +145,25 @@ void relayControlTask(void *parameter) {
     vTaskDelay(pdMS_TO_TICKS(DECISION_INTERVAL_MS));
   }
 }
+
+void connectWiFi() {
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  xSemaphoreTake(serialMutex, portMAX_DELAY);
+  Serial.print("Connecting to WiFi");
+  xSemaphoreGive(serialMutex);
+
+  while(WiFi.status() != WL_CONNECTED) {
+    delay(400);
+    Serial.print(".");
+  }
+
+  xSemaphoreTake(serialMutex, portMAX_DELAY);
+  Serial.println();
+  Serial.print("Connected. Dashboard available at: http://");
+  Serial.println(WiFi.localIP());
+  xSemaphoreGive(serialMutex);
+};
 
 void setup() {
   Serial.begin(115200);
