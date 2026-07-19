@@ -58,8 +58,8 @@ const char* NVS_NAMESPACE = "plantcare";
 const char* NVS_KEY_THRESHOLD = "threshold";
 
 // ---------------- WiFi variables ----------------
-const char* WIFI_SSID = "SSID";
-const char* WIFI_PASSWORD = "PASSWORD";
+const char* WIFI_SSID = "Galaxy A56 5G 1C4B";
+const char* WIFI_PASSWORD = "abolfazl543";
 
 
 // ==========================================================================================
@@ -86,6 +86,95 @@ void saveThresholdToNVS(int newThreshold) {
   Serial.printf("Saved new moisture threshold to NVS: %d%%\n", moistureThreshold);
   xSemaphoreGive(serialMutex);
 }
+
+// ---------------- WiFi connection function ----------------
+void connectWiFi() {
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  xSemaphoreTake(serialMutex, portMAX_DELAY);
+  Serial.print("Connecting to WiFi");
+  xSemaphoreGive(serialMutex);
+
+  while(WiFi.status() != WL_CONNECTED) {
+    delay(400);
+    Serial.print(".");
+  }
+
+  xSemaphoreTake(serialMutex, portMAX_DELAY);
+  Serial.println();
+  Serial.print("Connected. Dashboard available at: http://");
+  Serial.println(WiFi.localIP());
+  xSemaphoreGive(serialMutex);
+};
+
+// ---------------- WebServer routes handlers ----------------
+void handleRoot() {
+  File file = LittleFS.open("/dashboard.html", "r");
+  if (!file) {
+    server.send(500, "text/plain", "Dashboard file not found");
+    return;
+  }
+  server.streamFile(file, "text/html");
+  file.close();
+}
+
+void handleStatus() {
+  JsonDocument doc;
+
+  doc["soilPercent"] = soilPercent;
+  doc["temperature"] = lastTemperature;
+  doc["humidity"] = lastHumidity;
+  doc["relayOn"] = (digitalRead(RELAY_PIN) == RELAY_ON);
+  doc["wateringActive"] = wateringActive;
+
+  unsigned long elapsed = millis() - lastWateringTime;
+  doc["cooldownRemainingMs"] = (elapsed < cooldownPeriodMs) ? (cooldownPeriodMs - elapsed) : 0;
+  doc["lastWateredMsAgo"] = elapsed;
+
+  doc["moistureThreshold"] = moistureThreshold;
+  doc["cooldownPeriodMs"] = cooldownPeriodMs;
+  doc["wateringDurationMs"] = wateringDurationMs;
+  doc["decisionIntervalMs"] = decisionIntervalMs;
+  doc["uptimeMs"] = millis();
+
+  String output;
+  serializeJson(doc, output);
+  server.send(200, "application/json", output);
+}
+
+void handleSettings() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"missing body\"}");
+    return;
+  }
+
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain"))) {
+    server.send(400, "application/json", "{\"error\":\"invalid json\"}");
+    return;
+  }
+
+  if (doc["moistureThreshold"].is<int>()) {
+    saveThresholdToNVS(doc["moistureThreshold"].as<int>());
+  }
+  if (doc["cooldownPeriodMs"].is<unsigned long>()) {
+    cooldownPeriodMs = doc["cooldownPeriodMs"].as<unsigned long>();
+  }
+  if (doc["wateringDurationMs"].is<unsigned long>()) {
+    wateringDurationMs = doc["wateringDurationMs"].as<unsigned long>();
+  }
+  if (doc["decisionIntervalMs"].is<unsigned long>()) {
+    decisionIntervalMs = doc["decisionIntervalMs"].as<unsigned long>();
+  }
+
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleWaterNow() {
+  manualWaterRequest = true;
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
 
 // --------------- Soil moisture functions -----------------
 int rawToPercent(int raw) {
@@ -192,93 +281,6 @@ void webServerTask(void *parameter) {
   }
 }
 
-// ---------------- WiFi connection function ----------------
-void connectWiFi() {
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-  xSemaphoreTake(serialMutex, portMAX_DELAY);
-  Serial.print("Connecting to WiFi");
-  xSemaphoreGive(serialMutex);
-
-  while(WiFi.status() != WL_CONNECTED) {
-    delay(400);
-    Serial.print(".");
-  }
-
-  xSemaphoreTake(serialMutex, portMAX_DELAY);
-  Serial.println();
-  Serial.print("Connected. Dashboard available at: http://");
-  Serial.println(WiFi.localIP());
-  xSemaphoreGive(serialMutex);
-};
-
-// ---------------- WebServer routes handlers ----------------
-void handleRoot() {
-  File file = LittleFS.open("/dashboard.html", "r");
-  if (!file) {
-    server.send(500, "text/plain", "Dashboard file not found");
-    return;
-  }
-  server.streamFile(file, "text/html");
-  file.close();
-}
-
-void handleStatus() {
-  JsonDocument doc;
-
-  doc["soilPercent"] = soilPercent;
-  doc["temperature"] = lastTemperature;
-  doc["humidity"] = lastHumidity;
-  doc["relayOn"] = (digitalRead(RELAY_PIN) == RELAY_ON);
-  doc["wateringActive"] = wateringActive;
-
-  unsigned long elapsed = millis() - lastWateringTime;
-  doc["cooldownRemainingMs"] = (elapsed < cooldownPeriodMs) ? (cooldownPeriodMs - elapsed) : 0;
-  doc["lastWateredMsAgo"] = elapsed;
-
-  doc["moistureThreshold"] = moistureThreshold;
-  doc["cooldownPeriodMs"] = cooldownPeriodMs;
-  doc["wateringDurationMs"] = wateringDurationMs;
-  doc["decisionIntervalMs"] = decisionIntervalMs;
-  doc["uptimeMs"] = millis();
-
-  String output;
-  serializeJson(doc, output);
-  server.send(200, "application/json", output);
-}
-
-void handleSettings() {
-  if (!server.hasArg("plain")) {
-    server.send(400, "application/json", "{\"error\":\"missing body\"}");
-    return;
-  }
-
-  JsonDocument doc;
-  if (deserializeJson(doc, server.arg("plain"))) {
-    server.send(400, "application/json", "{\"error\":\"invalid json\"}");
-    return;
-  }
-
-  if (doc["moistureThreshold"].is<int>()) {
-    saveThresholdToNVS(doc["moistureThreshold"].as<int>());
-  }
-  if (doc["cooldownPeriodMs"].is<unsigned long>()) {
-    cooldownPeriodMs = doc["cooldownPeriodMs"].as<unsigned long>();
-  }
-  if (doc["wateringDurationMs"].is<unsigned long>()) {
-    wateringDurationMs = doc["wateringDurationMs"].as<unsigned long>();
-  }
-  if (doc["decisionIntervalMs"].is<unsigned long>()) {
-    decisionIntervalMs = doc["decisionIntervalMs"].as<unsigned long>();
-  }
-
-  server.send(200, "application/json", "{\"ok\":true}");
-}
-
-void handleWaterNow() {
-  manualWaterRequest = true;
-  server.send(200, "application/json", "{\"ok\":true}");
-}
 
 void setup() {
   Serial.begin(115200);
