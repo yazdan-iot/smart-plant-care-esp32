@@ -30,10 +30,20 @@ const int RELAY_PIN = 15;
 #define RELAY_OFF HIGH
 
 // const int MOISTURE_THRESHOLD = 99;                // TEST VALUE — change to 30 for production
+// const unsigned long COOLDOWN_PERIOD_MS = 10000;    // TEST VALUE — change to real cooldown later (e.g. hours)
+// const unsigned long WATERING_DURATION_MS = 4000;   // how long the pump stays on
+// const unsigned long DECISION_INTERVAL_MS = 5000;   // TEST VALUE — how often we check the decision
+
 int moistureThreshold = 30;   // in-memory copy, loaded from NVS at boot (fallback default: 30)
-const unsigned long COOLDOWN_PERIOD_MS = 10000;    // TEST VALUE — change to real cooldown later (e.g. hours)
-const unsigned long WATERING_DURATION_MS = 4000;   // how long the pump stays on
-const unsigned long DECISION_INTERVAL_MS = 5000;   // TEST VALUE — how often we check the decision
+unsigned long cooldownPeriodMs = 6UL * 3600 * 1000;
+unsigned long wateringDurationMs = 5000;
+unsigned long decisionIntervalMs = 30UL * 60 * 1000;
+
+volatile bool wateringActive = false;
+volatile bool manualWaterRequest = false;
+
+volatile float lastTemperature = 0;
+volatile float lastHumidity = 0;
 
 volatile unsigned long lastWateringTime = 0;
 
@@ -104,8 +114,13 @@ void environmentTask(void *parameter) {
     xSemaphoreTake(serialMutex, portMAX_DELAY);
     if (dhtOk) {
       Serial.printf("Soil: %d%% | Temp: %.2fC | Humidity: %.2f%%\n", soilPercent, temperature, humidity);
+      
+      lastTemperature = temperature;
+      lastHumidity = humidity;
     } else {
       Serial.printf("Soil: %d%% | Temp: -- | Humidity: -- (DHT read failed)\n", soilPercent);
+      
+      lastTemperature = temperature;
     }
     xSemaphoreGive(serialMutex);
 
@@ -119,15 +134,18 @@ void relayControlTask(void *parameter) {
 
   for (;;) {
     bool soilIsDry = soilPercent < moistureThreshold;  // was: MOISTURE_THRESHOLD
-    bool cooldownPassed = (millis() - lastWateringTime) > COOLDOWN_PERIOD_MS;
+    bool cooldownPassed = (millis() - lastWateringTime) > cooldownPeriodMs;
 
-    if (soilIsDry && cooldownPassed) {
+    if ((soilIsDry && cooldownPassed) || manualWaterRequest) {
+      wateringActive = true;
+      manualWaterRequest = false;
+
       xSemaphoreTake(serialMutex, portMAX_DELAY);
       Serial.println("Soil is dry, starting watering cycle");
       xSemaphoreGive(serialMutex);
 
       digitalWrite(RELAY_PIN, RELAY_ON);
-      vTaskDelay(pdMS_TO_TICKS(WATERING_DURATION_MS));
+      vTaskDelay(pdMS_TO_TICKS(wateringDurationMs));
       digitalWrite(RELAY_PIN, RELAY_OFF);
 
       lastWateringTime = millis();
@@ -136,13 +154,14 @@ void relayControlTask(void *parameter) {
       Serial.println("Watering cycle complete");
       xSemaphoreGive(serialMutex);
 
+      wateringActive = false;
     } else if (soilIsDry && !cooldownPassed) {
       xSemaphoreTake(serialMutex, portMAX_DELAY);
       Serial.println("Soil is dry but still in cooldown period");
       xSemaphoreGive(serialMutex);
     }
 
-    vTaskDelay(pdMS_TO_TICKS(DECISION_INTERVAL_MS));
+    vTaskDelay(pdMS_TO_TICKS(decisionIntervalMs));
   }
 }
 
