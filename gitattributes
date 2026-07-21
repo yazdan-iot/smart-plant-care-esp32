@@ -1,0 +1,5 @@
+# Exclude the web dashboard assets from GitHub's language stats,
+# so the repo is represented by its actual firmware code (C++).
+data/dashboard.html linguist-vendored
+data/style.css linguist-vendored
+data/app.js linguist-vendored
