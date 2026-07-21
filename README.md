@@ -14,7 +14,7 @@ Built with PlatformIO (Arduino framework) and FreeRTOS, with an emphasis on powe
 * ✅ Automatic watering decision logic with configurable moisture threshold
 * ✅ Cooldown protection to prevent repeated watering
 * ✅ Configurable watering duration and decision interval
-* ✅ Relay control (control side tested independently)
+* ✅ Relay control (control side tested and confirmed working with correct power source, see [Known Issues](#known-issues))
 * ✅ Persistent moisture threshold via NVS (survives reboot)
 * ✅ Live web dashboard served directly from the device (WiFi + LittleFS)
 * ✅ REST API for live status, remote configuration, and manual watering override
@@ -33,10 +33,10 @@ See [Project Roadmap](#project-roadmap) below for the full phase breakdown.
 | ESP32-S3-WROOM-1                             | Main controller                                        |
 | Resistive soil moisture sensor (LM393-based) | Soil moisture reading                                  |
 | DHT22                                        | Air temperature and humidity                           |
-| 5V single-channel relay module               | Pump switching (control side wired; load side pending) |
+| 5V single-channel relay module               | Pump switching (control side wired; **must be powered from an external 5V supply, not the ESP32 5V pin — see [Known Issues](#known-issues)**) |
 | Miniature submersible water pump             | Irrigation actuator *(not yet wired)*                  |
 | 1N4007 diode                                 | Flyback protection for pump *(not yet wired)*          |
-| External 5V/12V adapter                      | Independent power for the pump *(not yet wired)*       |
+| External 5V/12V adapter                      | Independent power for the relay coil and pump          |
 
 ## Wiring
 
@@ -47,6 +47,12 @@ A real photo of the current physical build is available in [`docs/photos/`](docs
 ### Why the soil sensor is power-gated
 
 The resistive soil sensor is powered through a GPIO pin (not tied directly to 3.3V) and is only switched on for the brief moment of each reading. Continuous power across the probes accelerates electrochemical corrosion in moist soil, so gating the power — combined with a long read interval in production — significantly extends the sensor's usable life.
+
+### Why the relay is powered externally, not from the ESP32 5V pin
+
+The ESP32-S3's 5V pin is not an independent, high-current power source — it is effectively a pass-through from the USB VBUS line (through a protection diode, and on some boards a polyfuse). It's meant to supply a few tens of milliamps at most, not an external load like a relay coil, which typically draws 70–200 mA. Under that load, the combined voltage drop across the protection diode, the USB cable/port's own current limit, and the board's internal trace resistance is large enough to collapse the rail (observed dropping from ~4.5V to ~1.1V under load — see [Known Issues](#known-issues)).
+
+Because of this, the relay coil (and eventually the pump) must be powered from a **dedicated external 5V/12V supply**, with only the relay's control (IN) pin driven by an ESP32 GPIO, and a **common ground** shared between the ESP32 and the external supply.
 
 ### Why the watering cooldown resets on every reboot
 
@@ -96,16 +102,20 @@ pio device monitor
 * [x] Phase 1 — Soil moisture sensor + calibration
 * [x] Phase 2 — DHT22 integration
 * [x] Phase 3 — Unified sensor task
-* [x] Phase 4 — Relay control test *(hardware issue under investigation, see below)*
+* [x] Phase 4 — Relay control test *(root cause of voltage drop identified — see Known Issues; relay confirmed working with external 5V supply)*
 * [x] Phase 5 — Automatic watering decision logic *(implemented with test parameters)*
 * [x] Phase 6 — Persistent moisture threshold via NVS
-* [x] Phase 8 — Web dashboard for monitoring and control *(moved up ahead of Phase 7 pending relay replacement)*
-* [ ] Phase 7 — Pump and power circuit integration
+* [x] Phase 8 — Web dashboard for monitoring and control *(moved up ahead of Phase 7 pending relay power fix)*
+* [ ] Phase 7 — Pump and power circuit integration *(unblocked — relay confirmed working with correct wiring; pending physical wiring of pump and external supply)*
 * [ ] Phase 9 — Final calibration and assembly
 
 ## Known Issues
 
-* **Relay module shows abnormal voltage drop under load.** With a fully direct wiring path from the ESP32's 5V pin to the relay's VCC/GND (bypassing the breadboard entirely), voltage still drops from ~4.5V to ~1V once the relay coil draws current. Jumper wires, connectors, and the ESP32 power pin have all been ruled out through direct multimeter testing. The relay module itself is currently suspected to be faulty and is pending replacement/confirmation. Phase 7 (pump integration) is blocked until this is resolved.
+* **~~Relay module shows abnormal voltage drop under load~~ — Resolved: root cause identified, not a faulty relay.** Even with a fully direct wiring path from the ESP32's 5V pin to the relay's VCC/GND (bypassing the breadboard entirely), voltage dropped from ~4.5V to ~1.1V once the relay coil drew current. Jumper wires, connectors, and the ESP32 power pin's continuity had all been ruled out through direct multimeter testing.
+
+  Follow-up testing confirmed the relay itself is not faulty: powering it from a **separate, dedicated 5V supply** eliminated the voltage drop entirely. The root cause is that the ESP32-S3's 5V pin is only a pass-through from USB VBUS (through a protection diode and limited cable/port current capacity), not a regulated high-current rail — it cannot supply the ~70–200 mA a relay coil draws without collapsing.
+
+  **Resolution:** the relay coil (and the pump once wired) must always be powered from an external 5V/12V supply, never from the ESP32's own 5V pin, with a common ground between the ESP32 and the external supply. This is now reflected in the [Wiring](#wiring) section. Phase 7 is unblocked.
 
 ## License
 
