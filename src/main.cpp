@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <SimpleDHT.h>
+#include <DHTesp.h>
 #include <Preferences.h>
 #include <WiFi.h>
 #include <WebServer.h>
@@ -19,14 +19,14 @@ const int RAW_DRY = 3500;   // raw value when soil is dry (HIGH now)
 const int RAW_WET = 0;      // raw value when fully wet (LOW now)
 
 volatile int soilPercent = -1;    // latest moisture reading as a percentage, shared across tasks
-const unsigned long READ_INTERVAL_MS = 1800000; // how often to read the sensor (ms); 1800000 = 30 min for production
+// const unsigned long READ_INTERVAL_MS = 1800000; // how often to read the sensor (ms); 1800000 = 30 min for production
 
 const int SENSOR_STABILIZE_MS = 2000; // how long to wait after powering the sensor before reading it (ms)
 const int SOIL_SAMPLE_COUNT  = 10;  // how many samples to take when reading the soil moisture sensor
 
 // ---------------- DHT22 vairables -----------------
-const int DHT_PIN = 18; // GPIO that reads the DHT22 sensor
-SimpleDHT22 dht22(DHT_PIN); // Create an instance of the DHT22 sensor
+const int DHT_PIN = 18;
+DHTesp dht;
 
 // ---------------- Relay control variables -----------------
 const int RELAY_PIN = 15;
@@ -39,10 +39,10 @@ const int RELAY_PIN = 15;
 // const unsigned long WATERING_DURATION_MS = 4000;   // how long the pump stays on
 // const unsigned long DECISION_INTERVAL_MS = 5000;   // TEST VALUE — how often we check the decision
 
-int moistureThreshold = 30;   // in-memory copy, loaded from NVS at boot (fallback default: 30)
-unsigned long cooldownPeriodMs = 6UL * 3600 * 1000;
-unsigned long wateringDurationMs = 5000;
-unsigned long decisionIntervalMs = 30UL * 60 * 1000;
+volatile int moistureThreshold = 30;   // in-memory copy, loaded from NVS at boot (fallback default: 30)
+volatile unsigned long cooldownPeriodMs = 6UL * 3600 * 1000;
+volatile unsigned long wateringDurationMs = 5000;
+volatile unsigned long decisionIntervalMs = 30UL * 60 * 1000;
 
 volatile bool wateringActive = false;
 volatile bool manualWaterRequest = false;
@@ -167,6 +167,10 @@ void handleSettings() {
   }
   if (doc["decisionIntervalMs"].is<unsigned long>()) {
     decisionIntervalMs = doc["decisionIntervalMs"].as<unsigned long>();
+
+    xSemaphoreTake(serialMutex, portMAX_DELAY);
+    Serial.printf("Updated decision interval to %lu ms\n", decisionIntervalMs);
+    xSemaphoreGive(serialMutex);
   }
 
   server.send(200, "application/json", "{\"ok\":true}");
@@ -201,7 +205,6 @@ void environmentTask(void *parameter) {
   for (;;) {
     float temperature = 0;
     float humidity = 0;
-    int err = SimpleDHTErrSuccess;
 
     digitalWrite(SENSOR_POWER_PIN, HIGH);
     vTaskDelay(pdMS_TO_TICKS(SENSOR_STABILIZE_MS));
@@ -209,10 +212,23 @@ void environmentTask(void *parameter) {
     digitalWrite(SENSOR_POWER_PIN, LOW);
     soilPercent = rawToPercent(raw);
     
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(500));
     
-    err = dht22.read2(&temperature, &humidity, NULL);
-    bool dhtOk = (err == SimpleDHTErrSuccess);
+    TempAndHumidity data = dht.getTempAndHumidity();
+
+    bool dhtOk = true;
+
+    if (isnan(data.temperature) || isnan(data.humidity)) {
+      dhtOk = false;
+
+      xSemaphoreTake(serialMutex, portMAX_DELAY);
+      Serial.println("DHT read failed");
+      xSemaphoreGive(serialMutex);
+    }
+    else {
+      temperature = data.temperature;
+      humidity = data.humidity;
+    }
     
     xSemaphoreTake(serialMutex, portMAX_DELAY);
     if (dhtOk) {
@@ -227,7 +243,7 @@ void environmentTask(void *parameter) {
     }
     xSemaphoreGive(serialMutex);
 
-    vTaskDelay(pdMS_TO_TICKS(READ_INTERVAL_MS));
+    vTaskDelay(pdMS_TO_TICKS(decisionIntervalMs));
   }
 }
 
@@ -291,7 +307,8 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("Starting soil moisture sensor test (FreeRTOS)...");
-
+  dht.setup(DHT_PIN, DHTesp::DHT22);
+  
   serialMutex = xSemaphoreCreateMutex();
   loadSettingsFromNVS();
   lastWateringTime = millis(); // conservative default until real time (NTP) is available in Phase 8
@@ -302,7 +319,7 @@ void setup() {
 
   connectWiFi();
 
-  xTaskCreatePinnedToCore(environmentTask, "EnvironmentTask", 4096, NULL, 2, NULL, 1);
+  xTaskCreatePinnedToCore(environmentTask, "EnvironmentTask", 8192, NULL, 2, NULL, 0);
   xTaskCreatePinnedToCore(relayControlTask, "RelayControlTask", 4096, NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(webServerTask, "WebServerTask", 4096, NULL, 1, NULL, 1);
 }
