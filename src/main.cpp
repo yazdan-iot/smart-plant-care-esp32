@@ -42,7 +42,8 @@ const int RELAY_PIN = 15;
 volatile int moistureThreshold = 30;   // in-memory copy, loaded from NVS at boot (fallback default: 30)
 volatile unsigned long cooldownPeriodMs = 6UL * 3600 * 1000;
 volatile unsigned long wateringDurationMs = 5000;
-volatile unsigned long decisionIntervalMs = 30UL * 60 * 1000;
+volatile unsigned long decisionIntervalMs = 60000;
+unsigned long lastDecisionTime = millis();
 
 volatile bool wateringActive = false;
 volatile bool manualWaterRequest = false;
@@ -225,47 +226,51 @@ void environmentTask(void *parameter) {
   digitalWrite(SENSOR_POWER_PIN, LOW);
 
   for (;;) {
-    float temperature = 0;
-    float humidity = 0;
+    if (millis() - lastDecisionTime >= decisionIntervalMs) {
+      lastDecisionTime = millis();
 
-    digitalWrite(SENSOR_POWER_PIN, HIGH);
-    vTaskDelay(pdMS_TO_TICKS(SENSOR_STABILIZE_MS));
-    int raw = readSoilAveraged(SOIL_SAMPLE_COUNT);
-    digitalWrite(SENSOR_POWER_PIN, LOW);
-    soilPercent = rawToPercent(raw);
-    
-    vTaskDelay(pdMS_TO_TICKS(500));
-    
-    TempAndHumidity data = dht.getTempAndHumidity();
-
-    bool dhtOk = true;
-
-    if (isnan(data.temperature) || isnan(data.humidity)) {
-      dhtOk = false;
-
+      float temperature = 0;
+      float humidity = 0;
+  
+      digitalWrite(SENSOR_POWER_PIN, HIGH);
+      vTaskDelay(pdMS_TO_TICKS(SENSOR_STABILIZE_MS));
+      int raw = readSoilAveraged(SOIL_SAMPLE_COUNT);
+      digitalWrite(SENSOR_POWER_PIN, LOW);
+      soilPercent = rawToPercent(raw);
+      
+      vTaskDelay(pdMS_TO_TICKS(500));
+      
+      TempAndHumidity data = dht.getTempAndHumidity();
+  
+      bool dhtOk = true;
+  
+      if (isnan(data.temperature) || isnan(data.humidity)) {
+        dhtOk = false;
+  
+        xSemaphoreTake(serialMutex, portMAX_DELAY);
+        Serial.println("DHT read failed");
+        xSemaphoreGive(serialMutex);
+      }
+      else {
+        temperature = data.temperature;
+        humidity = data.humidity;
+      }
+      
       xSemaphoreTake(serialMutex, portMAX_DELAY);
-      Serial.println("DHT read failed");
+      if (dhtOk) {
+        Serial.printf("Soil: %d%% | Temp: %.2fC | Humidity: %.2f%%\n", soilPercent, temperature, humidity);
+        
+        lastTemperature = temperature;
+        lastHumidity = humidity;
+      } else {
+        Serial.printf("Soil: %d%% | Temp: -- | Humidity: -- (DHT read failed)\n", soilPercent);
+        
+        lastTemperature = temperature;
+      }
       xSemaphoreGive(serialMutex);
-    }
-    else {
-      temperature = data.temperature;
-      humidity = data.humidity;
-    }
-    
-    xSemaphoreTake(serialMutex, portMAX_DELAY);
-    if (dhtOk) {
-      Serial.printf("Soil: %d%% | Temp: %.2fC | Humidity: %.2f%%\n", soilPercent, temperature, humidity);
-      
-      lastTemperature = temperature;
-      lastHumidity = humidity;
-    } else {
-      Serial.printf("Soil: %d%% | Temp: -- | Humidity: -- (DHT read failed)\n", soilPercent);
-      
-      lastTemperature = temperature;
-    }
-    xSemaphoreGive(serialMutex);
+    };
 
-    vTaskDelay(pdMS_TO_TICKS(decisionIntervalMs));
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
