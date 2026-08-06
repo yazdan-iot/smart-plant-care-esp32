@@ -120,6 +120,28 @@ void handleRoot() {
   file.close();
 }
 
+void handleStyle() {
+  File file = LittleFS.open("/style.css", "r");
+  if (!file) {
+    server.send(404, "text/plain", "style.css not found");
+    return;
+  }
+
+  server.streamFile(file, "text/css");
+  file.close();
+}
+
+void handleAppJs() {
+  File file = LittleFS.open("/app.js", "r");
+  if (!file) {
+    server.send(404, "text/plain", "app.js not found");
+    return;
+  }
+
+  server.streamFile(file, "application/javascript");
+  file.close();
+}
+
 void handleStatus() {
   JsonDocument doc;
 
@@ -287,6 +309,8 @@ void relayControlTask(void *parameter) {
 // ---------------- WebServer task ----------------
 void webServerTask(void *parameter) {
   server.on("/", HTTP_GET, handleRoot);
+  server.on("/style.css", HTTP_GET, handleStyle);
+  server.on("/app.js", HTTP_GET, handleAppJs);
   server.on("/api/status", HTTP_GET, handleStatus);
   server.on("/api/settings", HTTP_POST, handleSettings);
   server.on("/api/water", HTTP_POST, handleWaterNow);
@@ -315,6 +339,14 @@ void setup() {
 
   if (!LittleFS.begin(true)) {
     Serial.println("LittleFS mount failed");
+  }
+
+  File root = LittleFS.open("/");
+  File file = root.openNextFile();
+
+  while (file) {
+      Serial.println(file.name());
+      file = root.openNextFile();
   }
 
   connectWiFi();
