@@ -21,7 +21,7 @@ const int RAW_WET = 0;      // raw value when fully wet (LOW now)
 volatile int soilPercent = -1;    // latest moisture reading as a percentage, shared across tasks
 const unsigned long READ_INTERVAL_MS = 1800000; // how often to read the sensor (ms); 1800000 = 30 min for production
 
-const int SENSOR_STABILIZE_MS = 200; // how long to wait after powering the sensor before reading it (ms)
+const int SENSOR_STABILIZE_MS = 2000; // how long to wait after powering the sensor before reading it (ms)
 const int SOIL_SAMPLE_COUNT  = 10;  // how many samples to take when reading the soil moisture sensor
 
 // ---------------- DHT22 vairables -----------------
@@ -58,8 +58,8 @@ const char* NVS_NAMESPACE = "plantcare";
 const char* NVS_KEY_THRESHOLD = "threshold";
 
 // ---------------- WiFi variables ----------------
-const char* WIFI_SSID = "Galaxy A56 5G 1C4B";
-const char* WIFI_PASSWORD = "abolfazl543";
+const char* WIFI_SSID = "TP-LINK642";
+const char* WIFI_PASSWORD = "2510359991";
 
 
 // ==========================================================================================
@@ -99,6 +99,8 @@ void connectWiFi() {
     delay(400);
     Serial.print(".");
   }
+
+  WiFi.setSleep(false);
 
   xSemaphoreTake(serialMutex, portMAX_DELAY);
   Serial.println();
@@ -206,9 +208,12 @@ void environmentTask(void *parameter) {
     int raw = readSoilAveraged(SOIL_SAMPLE_COUNT);
     digitalWrite(SENSOR_POWER_PIN, LOW);
     soilPercent = rawToPercent(raw);
-
-    bool dhtOk = (dht22.read2(&temperature, &humidity, NULL) == SimpleDHTErrSuccess);
-
+    
+    vTaskDelay(pdMS_TO_TICKS(50));
+    
+    err = dht22.read2(&temperature, &humidity, NULL);
+    bool dhtOk = (err == SimpleDHTErrSuccess);
+    
     xSemaphoreTake(serialMutex, portMAX_DELAY);
     if (dhtOk) {
       Serial.printf("Soil: %d%% | Temp: %.2fC | Humidity: %.2f%%\n", soilPercent, temperature, humidity);
@@ -297,7 +302,7 @@ void setup() {
 
   connectWiFi();
 
-  xTaskCreatePinnedToCore(environmentTask, "EnvironmentTask", 4096, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(environmentTask, "EnvironmentTask", 4096, NULL, 2, NULL, 1);
   xTaskCreatePinnedToCore(relayControlTask, "RelayControlTask", 4096, NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(webServerTask, "WebServerTask", 4096, NULL, 1, NULL, 1);
 }
