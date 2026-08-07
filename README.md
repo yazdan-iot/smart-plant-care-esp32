@@ -109,14 +109,6 @@ pio device monitor
 * [x] Phase 8 — Web dashboard for monitoring and control
 * [x] Phase 9 — Final assembly
 
-## Known Issues
-
-* **~~Relay module shows abnormal voltage drop under load~~ — Resolved: root cause identified, not a faulty relay.** Even with a fully direct wiring path from the ESP32's 5V pin to the relay's VCC/GND (bypassing the breadboard entirely), voltage dropped from ~4.5V to ~1.1V once the relay coil drew current. Jumper wires, connectors, and the ESP32 power pin's continuity had all been ruled out through direct multimeter testing.
-
-  Follow-up testing confirmed the relay itself is not faulty: powering it from a **separate, dedicated 5V supply** eliminated the voltage drop entirely. The root cause is that the ESP32-S3's 5V pin is only a pass-through from USB VBUS (through a protection diode and limited cable/port current capacity), not a regulated high-current rail — it cannot supply the current a relay coil (or pump) draws without collapsing.
-
-  **Resolution:** the relay coil and the pump are both powered from the MB102 module's 5V rail, never from the ESP32's own 5V pin, with a common ground between the ESP32 and the MB102. This is now reflected in the [Wiring](#wiring) section.
-
 ## License
 
 MIT
